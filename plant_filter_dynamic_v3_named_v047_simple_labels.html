@@ -1,0 +1,553 @@
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>植物データフィルタ（改訂版）</title>
+  <style>
+    body { font-family: sans-serif; }
+    label { margin-right: 10px; display: inline-block; min-width: 160px; }
+    .filter-group { margin-bottom: 1em; }
+    table { border-collapse: collapse; margin-top: 20px; }
+    th, td { border: 1px solid #000; padding: 4px 8px; }
+    .pagination { margin-top: 1em; }
+    .pagination button { margin: 0 2px; }
+    .status-bar { margin: 1em 0; font-weight: bold; }
+  
+    .category-label {
+  color: red !important;
+  font-weight: bold;
+
+      color: #666;
+      font-style: italic;
+      font-size: 0.9em;
+      margin-top: 0.5em;
+    }
+    
+body {
+  background-image: url("flame.jpg");
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+}
+#main-container {
+  background-color: rgba(255, 255, 255, 0.85);
+  padding: 1rem;
+  border-radius: 0.5rem;
+}
+
+</style>
+    
+
+<style>
+  th.sortable {
+    cursor: pointer;
+  }
+</style>
+
+</head>
+<body>
+<div id='main-container'>
+  <h1>植物燃焼性データベース（燃焼特性）［ベータ版］</h1>
+<button id="download-csv" style="margin-right: 1em;">📥 結果をCSV出力</button>
+<button id="show-graph" style="margin-right: 1em;">📊 グラフ表示</button>
+<button id="clearFiltersBtn" style="margin: 10px 0; font-weight: bold;">🔄 すべてのチェックを解除</button>
+<p><em>更新日：2025年4月10日 ／ ver0.4.7_simple_labels</em></p>
+
+  <div class="filter-group"><strong>生育型: <span id="toggleGrowth" style="cursor:pointer;">🔽</span></strong>
+<div id="growth_form"><br><div id="growth_form"></div></div>
+  <div class="filter-group"></div>
+<strong>生活環: <span id="toggleLifespan" style="cursor:pointer;">🔽</span></strong>
+<div id="lifespan"><br><div id="lifespan"></div></div>
+  <div class="filter-group"></div>
+<strong>部位: <span id="togglePart" style="cursor:pointer;">🔽</span></strong>
+<div id="plant_part"><br><div id="plant_part"></div></div>
+  <div class="filter-group"></div>
+<strong>燃焼特性: <span id="toggleVarName" style="cursor:pointer;">🔽</span></strong>
+<div id="var_name"><br><div id="var_name"></div></div>
+
+  <div class="status-bar" id="statusBar">該当件数: 0 件</div>
+
+  <table id="dataTable">
+    <thead>
+      <tr>
+        <th class="sortable" data-column="ID">ID 🔽</th><th class="sortable" data-column="taxon_ID">taxon_ID 🔽</th><th class="sortable" data-column="科">科 🔽</th><th class="sortable" data-column="生育型">生育型 🔽</th><th class="sortable" data-column="生活環">生活環 🔽</th>
+        <th class="sortable" data-column="部位">部位 🔽</th><th class="sortable" data-column="燃焼特性">燃焼特性 🔽</th><th class="sortable" data-column="燃焼特性値">燃焼特性値 🔽</th>
+        <th class="sortable" data-column="木質性">木質性 🔽</th><th class="sortable" data-column="葉フェノロジー">葉フェノロジー 🔽</th><th class="sortable" data-column="family">family 🔽</th><th class="sortable" data-column="genus">genus 🔽</th><th class="sortable" data-column="species">species 🔽</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <div class="pagination" id="pagination"></div>
+
+  <script>
+    let globalData = [];
+    let filteredData = [];
+    let currentPage = 1;
+    const itemsPerPage = 50;
+    const fields = ["growth_form", "lifespan", "plant_part", "var_name"];
+    const allOptions = {};
+
+    fetch("plant_data_multi_filter_v3.json")
+      .then(res => res.json())
+      .then(json => {
+        globalData = json.data;
+        fields.forEach(field => {
+          allOptions[field] = json.filters[field];
+        });
+        allOptions["var_name"] = ["ignition frequency (%)", "time to flaming (s)", "time to smoke (s)", "time to smouldering (s)", "temperature at flaming (℃)", "temperature increase rate (℃/s)", "flammability index", "flammability value", "flame height (cm)", "flame intensity (kw/m)", "maximum flame temperature (℃)", "maximum sample temperature (℃)", "rate of burning spread (cm/s)", "mass loss rate (g/s)", "mass loss rate per area (g/m2 s)", "percentage rate of mass loss (%/s)", "burning duration (s)", "flaming duration (s)", "smouldering duration (s)", "smouldering duration per mass (s/g)", "flaming duration per mass (s/g)", "frequency of sustained flaming (%)", "energy flux (kw/m2)", "maximum energy flux (kw/m2)", "energy release rate (kw)", "maximum energy release rate (kw)", "total heat release (mj/m2)", "calorific value (kcal/kg)", "heat released per mass (℃ s/g)", "time to maximum heat release rate (s)", "smoke duration (s)", "smoke release rate (m2/s)", "smoke specific extinction area (m2/kg)", "total smoke release (m2/m2)", "time to maximum smoke density (s)", "temperature at smoke (℃)", "estimated burnt biomass (%)", "burnt biomass (%)", "various derived indexes"];
+// 初期描画のみ
+renderFilters(globalData);
+        filterAndDisplay();
+      });
+
+    function renderFilters(data) {
+      fields.forEach(field => {
+        const container = document.getElementById(field);
+        const counts = countByField(field, data);
+        const checkedValues = getCheckedValues(field);
+        container.innerHTML = "";
+
+        allOptions[field].forEach(item => {
+          const label = document.createElement("label");
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.value = item;
+          checkbox.name = field;
+          checkbox.checked = checkedValues.includes(item);
+          checkbox.addEventListener("change", () => {
+            currentPage = 1;
+            filterAndDisplay();
+          });
+          label.appendChild(checkbox);
+          label.appendChild(document.createTextNode(item + " (" + (counts[item] !== undefined ? counts[item] : 0) + ")"));
+          container.appendChild(label);
+        });
+      });
+    }
+
+    function countByField(field, data) {
+      const counts = {};
+      data.forEach(row => {
+        const key = row[field];
+        if (key) {
+          counts[key] = (counts[key] || 0) + 1;
+        }
+      });
+      return counts;
+    }
+
+    function getCheckedValues(name) {
+      return Array.from(document.querySelectorAll('input[name="' + name + '"]:checked')).map(cb => cb.value);
+    }
+
+    function filterAndDisplay() {
+      const selected = {
+        growth_form: getCheckedValues("growth_form"),
+        lifespan: getCheckedValues("lifespan"),
+        plant_part: getCheckedValues("plant_part"),
+        var_name: getCheckedValues("var_name")
+      };
+
+      filteredData = globalData.filter(d =>
+        (!selected.growth_form.length || selected.growth_form.includes(d.growth_form)) &&
+        (!selected.lifespan.length || selected.lifespan.includes(d.lifespan)) &&
+        (!selected.plant_part.length || selected.plant_part.includes(d.plant_part)) &&
+        (!selected.var_name.length || selected.var_name.includes(d.var_name))
+      );
+
+      // renderFilters(filteredData);（リアルタイム更新抑止）
+// renderVarNameCheckboxes(filteredData);（リアルタイム更新抑止）
+      displayPage(currentPage);
+      updatePagination();
+      updateStatusBar();
+    }
+
+    function displayPage(page) {
+      const tbody = document.querySelector("#dataTable tbody");
+      tbody.innerHTML = "";
+      const start = (page - 1) * itemsPerPage;
+      const end = start + itemsPerPage;
+      const pageData = filteredData.slice(start, end);
+      pageData.forEach(d => {
+        const row = `<tr>
+          <td>${d.ID}</td>
+          <td>${d["taxon_ID"]}</td>
+          <td>${d["科"]}</td>
+          <td>${d.growth_form}</td>
+          <td>${d.lifespan}</td>
+          <td>${d.plant_part}</td>
+          <td>${d.var_name}</td>
+          <td>${d.var_value}</td>
+          <td>${d["wood/woodiness"]}</td>
+          <td>${d.leaf_phenology}</td>
+          <td>${d.family}</td>
+          <td>${d.genus}</td>
+          <td>${d.species}</td>
+        </tr>`;
+        tbody.innerHTML += row;
+      });
+    }
+
+    function updatePagination() {
+      const pagination = document.getElementById("pagination");
+      pagination.innerHTML = "";
+      const totalPages = Math.ceil(filteredData.length / itemsPerPage);
+      if (totalPages <= 1) return;
+
+      if (currentPage > 1) {
+        const prev = document.createElement("button");
+        prev.textContent = "<< 前へ";
+        prev.onclick = () => {
+          currentPage--;
+          displayPage(currentPage);
+          updatePagination();
+          updateStatusBar();
+        };
+        pagination.appendChild(prev);
+      }
+
+      for (let i = 1; i <= totalPages; i++) {
+        const btn = document.createElement("button");
+        btn.textContent = i;
+        btn.disabled = (i === currentPage);
+        btn.onclick = () => {
+          currentPage = i;
+          displayPage(currentPage);
+          updatePagination();
+          updateStatusBar();
+        };
+        pagination.appendChild(btn);
+      }
+
+      if (currentPage < totalPages) {
+        const next = document.createElement("button");
+        next.textContent = "次へ >>";
+        next.onclick = () => {
+          currentPage++;
+          displayPage(currentPage);
+          updatePagination();
+          updateStatusBar();
+        };
+        pagination.appendChild(next);
+      }
+    }
+
+    function updateStatusBar() {
+      const status = document.getElementById("statusBar");
+      const total = filteredData.length;
+      const totalPages = Math.max(1, Math.ceil(total / itemsPerPage));
+      status.textContent = `該当件数: ${total} 件 / ページ: ${currentPage} / 全 ${totalPages} ページ`;
+    }
+  
+function renderVarNameCheckboxes(data) {
+  const varCounts = countByField("var_name", data);
+  const varNameContainer = document.getElementById("var_name");
+  const checkedValues = getCheckedValues("var_name");
+  varNameContainer.innerHTML = "";
+
+  const orderedVarNames = ["ignition frequency (%)", "time to flaming (s)", "time to smoke (s)", "time to smouldering (s)", "temperature at flaming (℃)", "temperature increase rate (℃/s)", "flammability index", "flammability value", "flame height (cm)", "flame intensity (kw/m)", "maximum flame temperature (℃)", "maximum sample temperature (℃)", "rate of burning spread (cm/s)", "mass loss rate (g/s)", "mass loss rate per area (g/m2 s)", "percentage rate of mass loss (%/s)", "burning duration (s)", "flaming duration (s)", "smouldering duration (s)", "smouldering duration per mass (s/g)", "flaming duration per mass (s/g)", "frequency of sustained flaming (%)", "energy flux (kw/m2)", "maximum energy flux (kw/m2)", "energy release rate (kw)", "maximum energy release rate (kw)", "total heat release (mj/m2)", "calorific value (kcal/kg)", "heat released per mass (℃ s/g)", "time to maximum heat release rate (s)", "smoke duration (s)", "smoke release rate (m2/s)", "smoke specific extinction area (m2/kg)", "total smoke release (m2/m2)", "time to maximum smoke density (s)", "temperature at smoke (℃)", "estimated burnt biomass (%)", "burnt biomass (%)", "various derived indexes"];
+  const categoryLabels = {"flammability value": "Ignitability（着火のしやすさ）", "percentage rate of mass loss (%/s)": "Combustibility（燃焼の強さ・激しさ）", "frequency of sustained flaming (%)": "Sustainability（持続性）", "time to maximum heat release rate (s)": "Energy Release（発熱量・エネルギー）", "temperature at smoke (℃)": "Smoke Production（煙の発生と影響）", "various derived indexes": "二次指標"};
+  const seenCategories = new Set();
+
+  orderedVarNames.forEach(val => {
+    const count = varCounts[val] !== undefined ? ` (${varCounts[val]})` : "";
+    const label = document.createElement("label");
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.name = "var_name";
+    checkbox.value = val;
+    checkbox.checked = checkedValues.includes(val);
+    checkbox.addEventListener("change", () => {
+      currentPage = 1;
+      filterAndDisplay();
+    });
+
+    label.appendChild(checkbox);
+    label.appendChild(document.createTextNode(" " + val + count));
+    varNameContainer.appendChild(label);
+
+    if (categoryLabels[val] && !seenCategories.has(categoryLabels[val])) {
+      seenCategories.add(categoryLabels[val]);
+      const note = document.createElement("div");
+      note.className = "category-label";
+      note.innerHTML = `※ ${categoryLabels[val]}`;
+      varNameContainer.appendChild(document.createElement("br"));
+      varNameContainer.appendChild(note);
+      varNameContainer.appendChild(document.createElement("br"));
+    }
+  });
+}
+
+
+document.getElementById("clearFiltersBtn").addEventListener("click", () => {
+  document.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+  currentPage = 1;
+  filterAndDisplay();
+});
+
+
+document.addEventListener("DOMContentLoaded", function () {
+  const toggles = [
+    ["toggleGrowth", "growth_form"],
+    ["toggleLifespan", "lifespan"],
+    ["togglePart", "plant_part"],
+    ["toggleVarName", "var_name"]
+  ];
+  toggles.forEach(([btnId, divId]) => {
+    const btn = document.getElementById(btnId);
+    const section = document.getElementById(divId);
+    if (btn && section) {
+      btn.addEventListener("click", function () {
+        if (section.style.display === "none") {
+          section.style.display = "";
+          btn.textContent = "🔽";
+        } else {
+          section.style.display = "none";
+          btn.textContent = "🔼";
+        }
+      });
+    }
+  });
+});
+
+
+document.addEventListener("DOMContentLoaded", function () {
+  const getCellValue = (tr, idx) => tr.children[idx].innerText || tr.children[idx].textContent;
+
+  const comparer = function (idx, asc) {
+    return function (a, b) {
+      const v1 = getCellValue(asc ? a : b, idx);
+      const v2 = getCellValue(asc ? b : a, idx);
+      return !isNaN(v1) && !isNaN(v2) ? v1 - v2 : v1.localeCompare(v2);
+    };
+  };
+
+  document.querySelectorAll("th.sortable").forEach(th => {
+    th.addEventListener("click", function () {
+      const table = th.closest("table");
+      const tbody = table.querySelector("tbody");
+      const rows = Array.from(tbody.querySelectorAll("tr"));
+      const idx = Array.from(th.parentNode.children).indexOf(th);
+      const current = th.textContent.includes("🔼");
+      th.textContent = th.textContent.replace("🔽", "").replace("🔼", "") + (current ? " 🔽" : " 🔼");
+      rows.sort(comparer(idx, !current));
+      rows.forEach(row => tbody.appendChild(row));
+    });
+  });
+});
+
+
+document.getElementById("download-csv").addEventListener("click", function () {
+  const headers = Object.keys(filteredData[0]);
+  const csv = [];
+
+  // ヘッダー
+  csv.push(headers.map(h => `"${h.replace(/[🔽🔼]/g, "").replace(/"/g, '""')}"`).join(","));
+
+  // データ行
+  filteredData.forEach(row => {
+    csv.push(headers.map(h => {
+      let val = row[h] !== undefined && row[h] !== null ? row[h] : "";
+      return `"${String(val).replace(/"/g, '""')}"`;
+    }).join(","));
+  });
+
+  const csvContent = "\uFEFF" + csv.join("\n"); // UTF-8 with BOM
+  const now = new Date();
+  const pad = n => n.toString().padStart(2, '0');
+  const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}`;
+  const filename = `Result_${timestamp}_1.csv`;
+
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.setAttribute("href", url);
+  link.setAttribute("download", filename);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+});
+
+</script>
+</div>
+
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+document.getElementById("show-graph").addEventListener("click", function () {
+  const selectedTraits = Array.from(document.querySelectorAll("#var_name input[type=checkbox]:checked"))
+    .map(cb => cb.value);
+
+  if (selectedTraits.length === 0) {
+    alert("燃焼特性が選択されていません。");
+    return;
+  }
+
+  const dataMap = {};
+  filteredData.forEach(row => {
+    const family = row["科"];
+    const trait = row["var_name"];
+    const value = parseFloat(row["var_value"]);
+    if (!selectedTraits.includes(trait) || isNaN(value)) return;
+
+    if (!dataMap[family]) dataMap[family] = {};
+    if (!dataMap[family][trait]) dataMap[family][trait] = [];
+    dataMap[family][trait].push(value);
+  });
+
+  const win = window.open("", "_blank", "width=1000,height=800");
+  win.document.write("<html><head><title>燃焼特性グラフ</title>");
+  win.document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js"><\/script>');
+  win.document.write("</head><body>");
+  win.document.write("<h2>科ごとの燃焼特性（mean ± s.d.）</h2>");
+  win.document.write('<canvas id="traitChart" width="900" height="600"></canvas>');
+  win.document.write("</body></html>");
+  win.document.close();
+
+  const ctx = win.document.getElementById("traitChart").getContext("2d");
+  const families = Object.keys(dataMap);
+  const datasets = selectedTraits.map((trait, i) => {
+    const means = [];
+    const stds = [];
+    families.forEach(fam => {
+      const values = dataMap[fam][trait] || [];
+      if (values.length > 0) {
+        const mean = values.reduce((a, b) => a + b, 0) / values.length;
+        const std = Math.sqrt(values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length);
+        means.push(mean);
+        stds.push(std);
+      } else {
+        means.push(null);
+        stds.push(null);
+      }
+    });
+    return {
+      label: trait,
+      data: means,
+      backgroundColor: `rgba(${50 + i * 40}, 100, 200, 0.5)`,
+      borderColor: `rgba(${50 + i * 40}, 100, 200, 1)`,
+      borderWidth: 1
+    };
+  });
+
+  new win.Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: families,
+      datasets: datasets
+    },
+    options: {
+      indexAxis: "y",
+      responsive: true,
+      plugins: {
+        title: {
+          display: true,
+          text: "燃焼特性（mean ± s.d.）"
+        },
+        legend: {
+          position: "top"
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              const trait = context.dataset.label;
+              const mean = context.raw;
+              const famIdx = context.dataIndex;
+              const std = context.chart.data.datasets[context.datasetIndex].stds?.[famIdx] || "N/A";
+              return `${trait}: ${mean.toFixed(2)} ± ${std.toFixed(2)}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          title: {
+            display: true,
+            text: selectedTraits.length === 1 ? selectedTraits[0] : "燃焼特性値"
+          },
+          beginAtZero: true
+        }
+      }
+    }
+  });
+});
+</script>
+
+<script>
+document.getElementById("show-graph").addEventListener("click", function () {
+  const selectedTraits = Array.from(document.querySelectorAll("#var_name input[type=checkbox]:checked"))
+    .map(cb => cb.value);
+
+  if (selectedTraits.length === 0) {
+    alert("燃焼特性が選択されていません。");
+    return;
+  }
+
+  const dataMap = {};
+  filteredData.forEach(row => {
+    const family = row["科"];
+    const trait = row["var_name"];
+    const value = parseFloat(row["var_value"]);
+    if (!selectedTraits.includes(trait) || isNaN(value)) return;
+
+    if (!dataMap[family]) dataMap[family] = {};
+    if (!dataMap[family][trait]) dataMap[family][trait] = [];
+    dataMap[family][trait].push(value);
+  });
+
+  const win = window.open("", "_blank", "width=1000,height=800");
+  win.document.write("<html><head><title>燃焼特性グラフ</title>");
+  win.document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js"><\/script>');
+  win.document.write("</head><body>");
+  win.document.write("<h2>科ごとの燃焼特性（平均 ± SD）</h2>");
+  win.document.write('<canvas id="traitChart" width="900" height="600"></canvas>');
+  win.document.write("</body></html>");
+  win.document.close();
+
+  const ctx = win.document.getElementById("traitChart").getContext("2d");
+
+  const families = Object.keys(dataMap);
+  const datasets = selectedTraits.map((trait, i) => {
+    const means = families.map(fam => {
+      const values = dataMap[fam][trait] || [];
+      return values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : null;
+    });
+    return {
+      label: trait,
+      data: means,
+      backgroundColor: `rgba(${50 + i * 40}, 100, 200, 0.5)`,
+      borderColor: `rgba(${50 + i * 40}, 100, 200, 1)`,
+      borderWidth: 1
+    };
+  });
+
+  new win.Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: families,
+      datasets: datasets
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        title: {
+          display: true,
+          text: "燃焼特性：科ごとの平均"
+        }
+      },
+      indexAxis: "y",
+      scales: {
+        x: {
+          beginAtZero: true
+        }
+      }
+    }
+  });
+});
+</script>
+
+</body>
+</html>
